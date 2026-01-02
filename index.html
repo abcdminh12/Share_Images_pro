@@ -2160,24 +2160,31 @@
 
       function processDriveData(file) {
         let type = "file";
+
+        const link = file.webViewLink || file.driveLink || "";
         const mime = file.mimeType || "";
+        const thumb = file.thumbnailLink || "";
+
         if (mime.startsWith("image/")) type = "image";
         else if (mime.startsWith("video/")) type = "video";
         else if (mime.startsWith("audio/")) type = "audio";
-        let playerLink = file.webViewLink.replace("/view", "/preview");
-        let driveLink = file.webViewLink;
+
+        let playerLink = link ? link.replace("/view", "/preview") : "";
+        let driveLink = link;
+
         let directImageLink = "";
         if (type === "image") {
-          if (file.thumbnailLink) {
-            directImageLink = file.thumbnailLink.replace(/=s\d+/, "=s10000");
-          } else {
+          if (thumb) {
+            directImageLink = thumb.replace(/=s\d+/, "=s10000");
+          } else if (file.id) {
             directImageLink = `https://drive.google.com/uc?export=view&id=${file.id}`;
           }
         }
+
         return {
-          id: file.id,
-          name: file.name,
-          thumb: file.thumbnailLink || "",
+          id: file.id || "unknown_" + Date.now(),
+          name: file.name || "Không tên",
+          thumb: thumb,
           type: type,
           playerLink: playerLink,
           driveLink: driveLink,
@@ -2470,11 +2477,29 @@
         .join("");
 
       function saveHistory(i) {
-        let l = JSON.parse(localStorage.getItem("uploadHistory")) || [];
-        l = l.filter((x) => x.id !== i.id);
-        l.push(i);
-        if (l.length > 100) l.shift();
-        localStorage.setItem("uploadHistory", JSON.stringify(l));
+        try {
+          let raw = localStorage.getItem("uploadHistory");
+          let l = [];
+
+          if (raw) {
+            try {
+              l = JSON.parse(raw);
+              if (!Array.isArray(l)) l = [];
+            } catch (e) {
+              l = [];
+            }
+          }
+
+          if (i.id) {
+            l = l.filter((x) => x.id !== i.id);
+          }
+
+          l.push(i);
+          if (l.length > 100) l.shift();
+          localStorage.setItem("uploadHistory", JSON.stringify(l));
+        } catch (e) {
+          console.warn("Không thể lưu lịch sử:", e);
+        }
       }
 
       function clearResultList() {
@@ -2589,6 +2614,7 @@
         }
         loadingBox.style.display = "flex";
         updateLoadingText(0, 1);
+
         try {
           const currentServerIndex = serverSelect.value || 0;
           const res = await fetch(`${API_URL}/upload-url`, {
@@ -2600,20 +2626,24 @@
             }),
           });
           const json = await res.json();
+
           if (json.success) {
             localStorage.setItem(
               "lifetimeUploadCount",
               parseInt(localStorage.getItem("lifetimeUploadCount") || 0) + 1
             );
+
             const item = processDriveData({
               id: json.data.fileId,
               name: json.data.name,
               mimeType: json.data.mimeType,
-              webViewLink: json.data.driveLink,
+              webViewLink: json.data.webViewLink || json.data.driveLink,
               thumbnailLink: json.data.thumbnailLink,
             });
+
             saveHistory(item);
             renderItem(item);
+
             urlInput.value = "";
             showToast("Upload thành công!", "success");
             lastDataSignature = null;
@@ -2677,19 +2707,23 @@
                 "lifetimeUploadCount",
                 parseInt(localStorage.getItem("lifetimeUploadCount") || 0) + 1
               );
+
               const d = json.data;
+
               const item = processDriveData({
                 id: d.fileId,
                 name: d.name,
                 mimeType: d.mimeType,
-                webViewLink: d.driveLink,
+                webViewLink: d.webViewLink || d.driveLink,
                 thumbnailLink: d.thumbnailLink,
               });
+
               saveHistory(item);
               renderItem(item);
               return true;
             } else return false;
           } catch (e) {
+            console.error(e);
             return false;
           }
         });
