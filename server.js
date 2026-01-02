@@ -36,6 +36,12 @@ const getFolderId = (index = 0) => {
   const i = parseInt(index);
   return i === 1 ? process.env.FOLDER_ID_2 : process.env.FOLDER_ID_1;
 };
+const getToken = (index = 0) => {
+  const i = parseInt(index);
+  return i === 1
+    ? process.env.GOOGLE_REFRESH_TOKEN_2
+    : process.env.GOOGLE_REFRESH_TOKEN_1 || process.env.GOOGLE_REFRESH_TOKEN;
+};
 
 const createDriveClient = (refreshToken) => {
   const auth = new google.auth.OAuth2(
@@ -138,11 +144,16 @@ app.post("/upload", upload.single("myFile"), async (req, res) => {
     if (!req.file)
       return res.status(400).json({ success: false, error: "No file" });
 
-    const folderId = getFolderId(req.body.accountIndex);
+    const index = req.body.accountIndex;
+    const folderId = getFolderId(index);
+
+    const token = getToken(index);
+    const currentDrive = createDriveClient(token);
+
     const bufferStream = new stream.PassThrough();
     bufferStream.end(req.file.buffer);
 
-    const driveRes = await drive.files.create({
+    const driveRes = await currentDrive.files.create({
       requestBody: {
         name: req.file.originalname,
         parents: [folderId],
@@ -154,7 +165,7 @@ app.post("/upload", upload.single("myFile"), async (req, res) => {
       fields: "id, name, webViewLink, thumbnailLink, mimeType",
     });
 
-    await drive.permissions.create({
+    await currentDrive.permissions.create({
       fileId: driveRes.data.id,
       requestBody: { role: "reader", type: "anyone" },
     });
@@ -182,6 +193,10 @@ app.post("/upload-url", async (req, res) => {
       return res.status(400).json({ success: false, message: "Thiếu URL" });
 
     const folderId = getFolderId(accountIndex);
+
+    const token = getToken(accountIndex);
+    const currentDrive = createDriveClient(token);
+
     const response = await axios({
       method: "GET",
       url: url,
@@ -193,7 +208,7 @@ app.post("/upload-url", async (req, res) => {
       filename = url.split("/").pop().split("?")[0];
     } catch (e) {}
 
-    const driveResponse = await drive.files.create({
+    const driveResponse = await currentDrive.files.create({
       requestBody: { name: filename, parents: [folderId] },
       media: {
         mimeType: response.headers["content-type"],
@@ -202,7 +217,7 @@ app.post("/upload-url", async (req, res) => {
       fields: "id, name, webViewLink, thumbnailLink, mimeType",
     });
 
-    await drive.permissions.create({
+    await currentDrive.permissions.create({
       fileId: driveResponse.data.id,
       requestBody: { role: "reader", type: "anyone" },
     });
@@ -218,6 +233,7 @@ app.post("/upload-url", async (req, res) => {
       },
     });
   } catch (error) {
+    console.error(error);
     res
       .status(500)
       .json({ success: false, message: "Lỗi tải từ URL: " + error.message });
